@@ -18,11 +18,18 @@ test('fits a tall image into a three row band without a frame', () => {
   expect(plan.tiles[0].fit?.rows).toBeLessThanOrEqual(3)
 })
 
-test('keeps the frame and shrinks the image when four rows are free', () => {
-  const plan = planBand([{ n: 1, width: 1164, height: 1178 }], 5, 120, MEDIUM)
+test('drops the frame when it would shrink the image below its size', () => {
+  const plan = planBand([{ n: 1, width: 300, height: 300 }], 5, 120, MEDIUM)
+
+  expect(plan.isCompact).toBe(true)
+  expect(plan.tiles[0].fit?.rows).toBe(5)
+})
+
+test('keeps the frame once the full size fits with it', () => {
+  const plan = planBand([{ n: 1, width: 300, height: 300 }], 9, 120, MEDIUM)
 
   expect(plan.isCompact).toBe(false)
-  expect(plan.tiles[0].fit?.rows).toBeLessThanOrEqual(2)
+  expect(plan.tiles[0].fit?.rows).toBe(6)
 })
 
 test('splits the width between several thumbnails', () => {

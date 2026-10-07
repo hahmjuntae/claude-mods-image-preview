@@ -39,7 +39,7 @@ Requires a Claude Code build with function-hook mods. Tested on Claude Code 2.1.
 | Detect | Reads the prompt draft every 300 ms and looks for `[Image #N]` tokens |
 | Source | Reads `images/N.*`, which Claude Code writes to the session temp folder the moment you paste |
 | Draw | Renders a thumbnail with the best renderer your terminal supports (see below) |
-| Fit | Shrinks thumbnails to the rows and columns free above the prompt. With fewer than five free rows the frame is dropped and the number moves beside the image |
+| Fit | Shrinks thumbnails to the rows and columns free above the prompt. When the frame would make the image smaller than its size setting, the frame is dropped and the number moves beside the image |
 | Clear | Thumbnails disappear when you delete the token or submit the prompt |
 
 ## Renderers
