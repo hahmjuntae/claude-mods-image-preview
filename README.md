@@ -4,6 +4,10 @@ English | [한국어](README.ko.md)
 
 A Claude Code mod that shows thumbnails of pasted images right above the prompt, in any terminal.
 
+![Thumbnails of two pasted images above the Claude Code prompt](docs/screenshot.png)
+
+Terminals without image support get the same layout in colored half-blocks:
+
 ```
 ╭────────────╮ ╭────────────────────────╮
 │▀▀▀▀▀▀▀▀▀▀▀▀│ │▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀│
