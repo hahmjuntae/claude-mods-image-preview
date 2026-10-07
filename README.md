@@ -6,7 +6,7 @@ A Claude Code mod that shows thumbnails of pasted images right above the prompt,
 
 ![Thumbnails of two pasted images above the Claude Code prompt](docs/screenshot.png)
 
-Terminals without image support get the same layout in colored half-blocks:
+Terminals without image support get the same layout in colored quadrant blocks:
 
 ```
 ╭────────────╮ ╭────────────────────────╮
@@ -40,6 +40,7 @@ Requires a Claude Code build with function-hook mods. Tested on Claude Code 2.1.
 | Source | Reads `images/N.*`, which Claude Code writes to the session temp folder the moment you paste |
 | Draw | Renders a thumbnail with the best renderer your terminal supports (see below) |
 | Fit | Shrinks thumbnails to the rows and columns free above the prompt. When the frame would make the image smaller than its size setting, the frame is dropped and the number moves beside the image |
+| Open | Opens the original in the connected IDE's editor without taking the focus (see Original quality) |
 | Clear | Thumbnails disappear when you delete the token or submit the prompt |
 
 ## Renderers
@@ -48,11 +49,14 @@ Requires a Claude Code build with function-hook mods. Tested on Claude Code 2.1.
 |---|---|
 | kitty, Ghostty (outside tmux, screen and SSH) | Real pixels through the kitty graphics protocol |
 | A terminal that advertises the overlay (see Terminal integration), tmux included | Real pixels drawn by the terminal over marker cells |
-| Everything else: iTerm2, Terminal.app, WezTerm, Alacritty, Windows Terminal, VS Code, tmux, screen, SSH | Colored half-block characters (`▀` `▄`) |
+| Everything else: iTerm2, Terminal.app, WezTerm, Alacritty, Windows Terminal, VS Code, tmux, screen, SSH | Colored quadrant block characters (`▀` `▌` `▚` `▗` ...), two pixels across and two down per cell |
+| Any terminal or IDE on Windows, with `renderer` set to `window` | The original at full quality, drawn by a helper window over the thumbnail (see Original quality) |
 
-If a terminal looks like kitty but does not answer the graphics query, the mod switches to half-blocks on its own.
+If a terminal looks like kitty but does not answer the graphics query, the mod switches to quadrant blocks on its own.
 
-Inside tmux, Claude Code does not send kitty graphics, and it rejects the kitty Unicode placeholder character (`U+10EEEE`) that tmux image passthrough relies on. So inside tmux the thumbnail is drawn with half-blocks unless the outer terminal supports the overlay.
+Each cell picks the two colors and the quadrant glyph that best fit its 2x2 pixels, so a cell holds twice the horizontal detail of a half-block (`▀`) while a split between the pixel rows still draws as `▀`.
+
+Inside tmux, Claude Code does not send kitty graphics, and it rejects the kitty Unicode placeholder character (`U+10EEEE`) that tmux image passthrough relies on. So inside tmux the thumbnail is drawn with quadrant blocks unless the outer terminal supports the overlay.
 
 ## tmux
 
@@ -63,11 +67,22 @@ Thumbnails work inside tmux with no extra setup. Two settings decide whether the
 | `export CLAUDE_CODE_TMUX_TRUECOLOR=1` | Shell profile (`~/.zshrc`, `~/.bashrc`) | Claude Code lowers its colors to 256 inside tmux unless this is set. On Claude Code 2.1.292 a thumbnail drew with 256-color codes without it and 24-bit RGB with it |
 | `set -sa terminal-features ',*:RGB'` | `~/.tmux.conf` (tmux 3.2+) | Lets tmux pass 24-bit color to the outer terminal. On older tmux use `set -ga terminal-overrides ',*:Tc'` |
 
-The overlay renderer needs both inside tmux. Without `CLAUDE_CODE_TMUX_TRUECOLOR=1` the mod falls back to half-blocks on its own.
+The overlay renderer needs both inside tmux. Without `CLAUDE_CODE_TMUX_TRUECOLOR=1` the mod falls back to quadrant blocks on its own.
 
 ## Windows
 
-Works in Windows Terminal, PowerShell and Git Bash with half-blocks. PNG is decoded by the built-in decoder, and other formats are converted with PowerShell (`System.Drawing`) when it is available.
+Works in Windows Terminal, PowerShell and Git Bash with quadrant blocks. PNG is decoded by the built-in decoder, and other formats are converted with PowerShell (`System.Drawing`) when it is available.
+
+## Original quality
+
+A terminal draws a thumbnail out of text cells unless it speaks the kitty graphics protocol, so in the JetBrains terminal, Windows Terminal, VS Code and the rest a screenshot's text cannot be read in the thumbnail. The mod therefore offers two ways to see the original:
+
+- `renderer` set to `window` (Windows): the thumbnail is painted in one marker color, and a helper (`hooks/overlay.ps1`, PowerShell with C#) finds that rectangle on screen about ten times a second and draws the original over it in a borderless window. The window takes neither the focus nor clicks, follows the band as it moves, and disappears with the token, the submitted prompt, or the terminal leaving the screen. It is excluded from screen capture, so it does not show in your own screenshots. The helper only reads the screen to find the marker, keeps nothing, and exits within 15 seconds after the session ends; if it cannot start, the session falls back to blocks.
+- With `open` set to `ide`, inside an IDE terminal with the Claude Code extension (JetBrains, VS Code), each pasted image opens once in an editor tab, the IDE's own image viewer at full quality. The tab opens without taking the focus, so you keep typing in the prompt, and the thumbnail above the prompt shrinks to a one-line `#1 in IDE`. When Claude Code does not lend the IDE connection to mods, the mod reaches the same IDE server itself through PowerShell on Windows.
+- Pressing a thumbnail's number (`#1`) opens it again, in the IDE or, outside an IDE, in the system image viewer.
+- `open` set to `viewer` also opens the system image viewer on paste when no IDE is connected.
+
+This only changes what you see. Claude always receives the original file.
 
 ## Settings
 
@@ -75,10 +90,11 @@ Change them in `/config`.
 
 | Name | Values | Default |
 |---|---|---|
-| `renderer` | `auto`, `blocks`, `pixels`, `overlay` | `auto` |
+| `renderer` | `auto`, `blocks`, `pixels`, `overlay`, `window` | `auto` |
 | `size` | `small` 16x4, `medium` 24x6, `large` 40x10 (terminal cells) | `medium` |
+| `open` | `off`, `ide`, `viewer` | `off` |
 
-`auto` picks the overlay when the terminal advertises it, pixels on kitty and Ghostty, and half-blocks everywhere else.
+`auto` picks the overlay when the terminal advertises it, pixels on kitty and Ghostty, and quadrant blocks everywhere else.
 
 ## Supported formats
 

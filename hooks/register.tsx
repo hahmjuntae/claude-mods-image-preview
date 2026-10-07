@@ -4,8 +4,9 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Mode, Preview } from '../types'
 import { fromBase64, toBase64 } from './base64'
 import { planBand } from './layout'
+import { ideCommand, viewerCommands } from './open'
 import { decodePng, isPng } from './png'
-import { downsample, fitBox, halfBlockCells, markCells, markHex, markId, type Fit } from './thumb'
+import { downsample, fitBox, markCells, markHex, markId, quadrantCells, windowCells, windowKey, type Fit } from './thumb'
 
 const previews = atom({ plugin: 'mods-image-preview', key: 'previews' } as const, [] as Preview[])
 const mode = atom({ plugin: 'mods-image-preview', key: 'mode' } as const, 'blocks' as Mode)
@@ -19,6 +20,13 @@ const WEB_IMAGE = /\.(png|jpe?g|gif|webp)$/i
 const CLAUDE_TEMP = /^claude(-\d+)?$/
 const ALT_DENY = /\balt\b/i
 const SIZES: Record<string, [number, number]> = { small: [16, 4], medium: [24, 6], large: [40, 10] }
+// 렌더 시점 축소 여유분으로 사분면 격자의 2배 해상도 원본 보관
+const SOURCE_SCALE = 2
+const IDE_TIMEOUT_MS = 10_000
+const VIEWER_TIMEOUT_MS = 5_000
+const PORT = /^\d{1,5}$/
+// 오버레이 보조 프로세스가 spec 갱신이 15초 끊기면 스스로 끝나므로 그보다 짧은 생존 신호 간격
+const HEARTBEAT_MS = 5_000
 
 type Picture = { bytes: Uint8Array; path: string }
 
@@ -27,10 +35,13 @@ let bandRequestId: string | undefined
 let isPolling = false
 const attempts = new Map<number, number>()
 const probed = new Set<number>()
+const opened = new Set<string>()
+const overlay = { isRunning: false, writtenAt: 0 }
 
 export const register: Register = (on, options) => {
   const box: [number, number] = SIZES[String(options.size)] ?? [24, 6]
   const renderer = String(options.renderer)
+  const openMode = String(options.open)
 
   on('session.start', async ($, e, next) => {
     const chosen = await chooseMode($, renderer)
@@ -39,7 +50,7 @@ export const register: Register = (on, options) => {
     if (chosen === 'overlay') await pruneLinks($)
     // 이미지 붙여넣기는 prompt.edit 를 거치지 않아 초안 폴링으로 우회
     $.clock.every(POLL_MS, () => {
-      void poll($, box)
+      void poll($, box, openMode)
     })
 
     return next(e)
@@ -47,6 +58,8 @@ export const register: Register = (on, options) => {
 
   on('prompt.submit', async ($, e, next) => {
     await update($, previews, () => [])
+
+    if ((await read($, mode)) === 'window') await syncOverlay($, [])
 
     return next(e)
   })
@@ -59,8 +72,15 @@ export const register: Register = (on, options) => {
     if (list.length === 0) return next(e)
 
     const current = await read($, mode)
-    const { Box, Image, Raster, Text } = $.ui.resolve(e)
-    const plan = planBand(list, e.props.maxRows, e.props.bodyColumns, box)
+    const { Box, Button, Image, Raster, Text } = $.ui.resolve(e)
+    // IDE 탭이 원본을 보여 주는 이미지는 흐린 썸네일 대신 한 줄 표시라 폭 배분에서 제외
+    const plan = planBand(
+      list.filter(preview => !preview.isInIde),
+      e.props.maxRows,
+      e.props.bodyColumns,
+      box,
+    )
+    const fits = new Map(plan.tiles.map(tile => [tile.n, tile.fit]))
     bandRequestId = e.requestId
 
     const picture = (preview: Preview, fit: Fit | undefined) => {
@@ -78,6 +98,13 @@ export const register: Register = (on, options) => {
         )
       }
 
+      // 보조 프로세스가 화면에서 이 단색 칸을 찾아 원본 이미지 창으로 덮는 마커
+      if (current === 'window' && preview.source) {
+        const key = overlayKey(preview.n)
+
+        return <Raster key={`raster-${preview.n}`} columns={fit.columns} rows={fit.rows} cells={windowCells(key, fit.columns, fit.rows)} />
+      }
+
       const cells =
         current === 'overlay' && preview.id !== undefined
           ? markCells(preview.id, fit.columns, fit.rows)
@@ -86,18 +113,32 @@ export const register: Register = (on, options) => {
       return <Raster key={`raster-${preview.n}`} columns={fit.columns} rows={fit.rows} cells={cells} />
     }
 
+    // 번호를 누르면 IDE 탭이나 OS 뷰어로 원본 화질 확인
+    const label = (preview: Preview) => {
+      const { source } = preview
+
+      if (!source) return <Text dimColor>#{preview.n}</Text>
+
+      return <Button key={`open-${preview.n}`} label={`#${preview.n}`} plain dimColor onPress={() => void openOriginal($, source, true)} />
+    }
+
     return (
       <Box flexDirection="row" alignItems="flex-end" columnGap={1}>
-        {list.map((preview, i) =>
-          plan.isCompact ? (
+        {list.map(preview =>
+          preview.isInIde ? (
             <Box key={`tile-${preview.n}`} flexDirection="row" columnGap={1}>
-              {picture(preview, plan.tiles[i]?.fit)}
-              <Text dimColor>#{preview.n}</Text>
+              {label(preview)}
+              <Text dimColor>in IDE</Text>
+            </Box>
+          ) : plan.isCompact ? (
+            <Box key={`tile-${preview.n}`} flexDirection="row" columnGap={1}>
+              {picture(preview, fits.get(preview.n))}
+              {label(preview)}
             </Box>
           ) : (
             <Box key={`tile-${preview.n}`} flexDirection="column" alignItems="center" borderStyle="round" borderDimColor>
-              {picture(preview, plan.tiles[i]?.fit)}
-              <Text dimColor>#{preview.n}</Text>
+              {picture(preview, fits.get(preview.n))}
+              {label(preview)}
             </Box>
           ),
         )}
@@ -111,10 +152,10 @@ function blockCells(preview: Preview, fit: Fit): string {
 
   const thumb = { width: preview.thumbWidth, height: preview.thumbHeight, data: fromBase64(preview.thumb) }
 
-  return halfBlockCells(downsample(thumb, fit.pxWidth, fit.pxHeight))
+  return quadrantCells(downsample(thumb, fit.pxWidth * 2, fit.pxHeight))
 }
 
-async function poll($: EngineInterface, box: [number, number]): Promise<void> {
+async function poll($: EngineInterface, box: [number, number], openMode: string): Promise<void> {
   if (isPolling) return
 
   isPolling = true
@@ -132,6 +173,9 @@ async function poll($: EngineInterface, box: [number, number]): Promise<void> {
 
     if (isSettled) {
       if (chosen === 'pixels') await probePixels($, current)
+      if (chosen === 'window' && current.length > 0 && (await $.clock.now()) - overlay.writtenAt >= HEARTBEAT_MS) {
+        await syncOverlay($, current)
+      }
 
       return
     }
@@ -146,6 +190,22 @@ async function poll($: EngineInterface, box: [number, number]): Promise<void> {
     }
 
     await update($, previews, () => nextPreviews)
+
+    if (chosen === 'window') await syncOverlay($, nextPreviews)
+
+    for (const { source } of nextPreviews) {
+      if (!source || opened.has(source)) continue
+
+      opened.add(source)
+
+      if (openMode === 'off') continue
+
+      void openOriginal($, source, openMode === 'viewer').then(where => {
+        if (where !== 'ide') return
+
+        return update($, previews, list => list.map(preview => (preview.source === source ? { ...preview, isInIde: true } : preview)))
+      })
+    }
   } finally {
     isPolling = false
   }
@@ -166,9 +226,10 @@ async function loadPreview($: EngineInterface, n: number, box: [number, number],
     const picture = await readPicture($, file, maxColumns * 4)
     const image = decodePng(picture.bytes)
     const fit = fitBox(image.width, image.height, maxColumns, maxRows)
-    const thumb = downsample(image, fit.pxWidth, fit.pxHeight)
+    const thumb = downsample(image, fit.pxWidth * 2 * SOURCE_SCALE, fit.pxHeight * SOURCE_SCALE)
     const preview: Preview = {
       n,
+      source: file,
       width: image.width,
       height: image.height,
       thumb: toBase64(thumb.data),
@@ -187,11 +248,11 @@ async function loadPreview($: EngineInterface, n: number, box: [number, number],
 
     return preview
   } catch {
-    return { n, note: 'unsupported' }
+    return { n, source: file, note: 'unsupported' }
   }
 }
 
-// 엔진이 kitty 그래픽 질의에 응답이 없으면 alt 를 그리므로 반블록 폴백 근거
+// 엔진이 kitty 그래픽 질의에 응답이 없으면 alt 를 그리므로 블록 폴백 근거
 async function probePixels($: EngineInterface, list: Preview[]): Promise<void> {
   const target = list.find(preview => preview.file && !probed.has(preview.n))
 
@@ -341,7 +402,136 @@ async function childDirs($: EngineInterface, path: string): Promise<string[]> {
   }
 }
 
+// IDE 편집기 탭은 원본 화질 그대로이고 makeFrontmost 를 끄면 입력 포커스가 프롬프트에 남는 기준
+async function openOriginal($: EngineInterface, file: string, useViewer: boolean): Promise<'ide' | 'viewer' | undefined> {
+  if (await openInIde($, file)) return 'ide'
+  if (useViewer && (await openInViewer($, file))) return 'viewer'
+
+  return undefined
+}
+
+async function openInIde($: EngineInterface, file: string): Promise<boolean> {
+  try {
+    const { isError } = await $.mcp.call('ide', 'openFile', { filePath: file, preview: true, makeFrontmost: false })
+
+    if (!isError) return true
+  } catch {
+    // 엔진이 IDE 내부 도구를 내주지 않으면 IDE 터미널이 알려 준 서버로 직접 연결하는 폴백
+  }
+
+  try {
+    const port = await $.env.get('CLAUDE_CODE_SSE_PORT')
+    const dir = await claudeDir($)
+
+    if (!port || !PORT.test(port) || !dir || (await $.env.get('OS')) !== 'Windows_NT') return false
+
+    const lock = `${dir}/ide/${port}.lock`
+
+    if (!(await $.fs.exists(lock))) return false
+
+    const { exitCode } = await $.process.run(ideCommand(port, lock, file), { timeoutMs: IDE_TIMEOUT_MS })
+
+    return exitCode === 0
+  } catch {
+    return false
+  }
+}
+
+async function openInViewer($: EngineInterface, file: string): Promise<boolean> {
+  try {
+    const isWindows = (await $.env.get('OS')) === 'Windows_NT'
+
+    for (const argv of viewerCommands(file, isWindows)) {
+      try {
+        const { exitCode } = await $.process.run(argv, { timeoutMs: VIEWER_TIMEOUT_MS })
+
+        // explorer 는 열기에 성공해도 종료 코드 1 을 돌려주는 기준
+        if (exitCode === 0 || isWindows) return true
+      } catch {
+        continue
+      }
+    }
+  } catch {
+    return false
+  }
+
+  return false
+}
+
+async function claudeDir($: EngineInterface): Promise<string | undefined> {
+  const configured = await $.env.get('CLAUDE_CONFIG_DIR')
+
+  if (configured) return configured
+
+  const home = (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME'))
+
+  return home ? `${home}/.claude` : undefined
+}
+
+// 세션마다 마커 색이 달라 한 화면에 뜬 여러 세션의 썸네일을 구분하는 기준
+function overlayKey(n: number): number {
+  return windowKey(n, located ? markId(located.sessionId) : 0)
+}
+
+async function syncOverlay($: EngineInterface, list: Preview[]): Promise<void> {
+  if (!located) return
+
+  const spec = `${located.dir.replace(/[\\/]images$/, '')}/claude-mods-image-preview/overlay.txt`
+  const lines = list
+    .filter(preview => preview.source && !preview.isInIde && preview.width)
+    .map(preview => `${overlayKey(preview.n).toString(16).padStart(6, '0')}\t${preview.source}`)
+
+  await $.fs.write(spec, lines.length > 0 ? `${lines.join('\n')}\n` : '')
+  overlay.writtenAt = await $.clock.now()
+
+  if (lines.length > 0 && !overlay.isRunning) await startOverlay($, spec)
+}
+
+// 모듈이 내려가면 엔진이 자식을 끝내고, 비정상 종료면 이 세션은 블록 렌더러로 되돌리는 기준
+async function startOverlay($: EngineInterface, spec: string): Promise<void> {
+  const root = $.plugin.root
+  const candidates = [`${root}/hooks/overlay.ps1`, `${root}/../hooks/overlay.ps1`]
+  let script: string | undefined
+
+  for (const path of candidates) {
+    if (await $.fs.exists(path)) {
+      script = path
+      break
+    }
+  }
+
+  if (!script) {
+    await update($, mode, () => 'blocks')
+    return
+  }
+
+  overlay.isRunning = true
+
+  const argv = ['powershell', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-Spec', spec]
+
+  void (async () => {
+    let code: number | null = -1
+
+    try {
+      const child = $.process.spawn({ argv })
+
+      for await (const piece of child) {
+        if (piece.stream === 'stderr') $.ui.log(piece.text, { to: 'debug' })
+      }
+
+      code = (await child.result).code
+    } catch {
+      code = -1
+    }
+
+    overlay.isRunning = false
+
+    if (code !== 0) await update($, mode, () => 'blocks')
+  })()
+}
+
 async function chooseMode($: EngineInterface, renderer: string): Promise<Mode> {
+  if (renderer === 'window') return (await $.env.get('OS')) === 'Windows_NT' ? 'window' : 'blocks'
   if (renderer === 'blocks' || renderer === 'pixels' || renderer === 'overlay') return renderer
   if (await advertisesOverlay($)) return 'overlay'
 

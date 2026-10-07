@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { fromBase64 } from '../hooks/base64'
-import { downsample, fitBox, halfBlockCells, markCells, markHex, markId } from '../hooks/thumb'
+import { downsample, fitBox, markCells, markHex, markId, quadrantCells } from '../hooks/thumb'
 
 const DEFAULT_COLOR = 0x01000000
 
@@ -17,33 +17,57 @@ test('fits a tall image to the row limit', () => {
   expect(fitBox(400, 1600, 24, 6)).toEqual({ columns: 3, rows: 6, pxWidth: 3, pxHeight: 12 })
 })
 
-test('pairs two pixel rows per cell with the upper half block', () => {
-  const image = { width: 1, height: 2, data: Uint8Array.of(255, 0, 0, 255, 0, 0, 255, 255) }
+test('keeps an upper half block when the split is between the pixel rows', () => {
+  const image = {
+    width: 2,
+    height: 2,
+    data: Uint8Array.of(255, 0, 0, 255, 255, 0, 0, 255, 0, 0, 255, 255, 0, 0, 255, 255),
+  }
 
-  expect(words(halfBlockCells(image))).toEqual([0x2580, 0xff0000, 0x0000ff])
+  expect(words(quadrantCells(image))).toEqual([0x2580, 0xff0000, 0x0000ff])
+})
+
+test('splits a cell into left and right halves', () => {
+  const image = {
+    width: 2,
+    height: 2,
+    data: Uint8Array.of(255, 0, 0, 255, 0, 0, 255, 255, 255, 0, 0, 255, 0, 0, 255, 255),
+  }
+
+  expect(words(quadrantCells(image))).toEqual([0x258c, 0xff0000, 0x0000ff])
+})
+
+test('draws a lone corner pixel with a quadrant glyph', () => {
+  const image = {
+    width: 2,
+    height: 2,
+    data: Uint8Array.of(0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255, 255),
+  }
+
+  expect(words(quadrantCells(image))).toEqual([0x2597, 0xffffff, 0x000000])
 })
 
 test('leaves transparent pixels to the terminal background', () => {
   const image = {
-    width: 3,
+    width: 6,
     height: 2,
     data: Uint8Array.of(
-      255, 0, 0, 255, 0, 0, 0, 0, 0, 0, 0, 0,
-      0, 0, 0, 0, 0, 255, 0, 255, 0, 0, 0, 0,
+      255, 0, 0, 255, 255, 0, 0, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 0, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ),
   }
 
-  expect(words(halfBlockCells(image))).toEqual([
+  expect(words(quadrantCells(image))).toEqual([
     0x2580, 0xff0000, DEFAULT_COLOR,
-    0x2584, 0x00ff00, DEFAULT_COLOR,
+    0x2596, 0x00ff00, DEFAULT_COLOR,
     0x20, DEFAULT_COLOR, DEFAULT_COLOR,
   ])
 })
 
 test('draws an odd last pixel row over the background', () => {
-  const image = { width: 1, height: 1, data: Uint8Array.of(1, 2, 3, 255) }
+  const image = { width: 2, height: 1, data: Uint8Array.of(1, 2, 3, 255, 1, 2, 3, 255) }
 
-  expect(words(halfBlockCells(image))).toEqual([0x2580, 0x010203, DEFAULT_COLOR])
+  expect(words(quadrantCells(image))).toEqual([0x2580, 0x010203, DEFAULT_COLOR])
 })
 
 test('averages a block of pixels weighted by alpha', () => {
