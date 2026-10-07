@@ -1,0 +1,42 @@
+{
+  "name": "image-preview",
+  "version": "0.2.0",
+  "description": "Shows thumbnails of pasted images above the prompt, in any terminal",
+  "author": {
+    "name": "hahmjuntae"
+  },
+  "license": "MIT",
+  "keywords": [
+    "image",
+    "preview",
+    "paste",
+    "thumbnail",
+    "mod"
+  ],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "renderer": {
+      "type": "string",
+      "title": "Renderer",
+      "description": "auto: overlay pixels in Asterisk, kitty graphics in kitty and Ghostty, colored half-blocks elsewhere. blocks, pixels and asterisk force one renderer.",
+      "default": "auto",
+      "options": [
+        "auto",
+        "blocks",
+        "pixels",
+        "asterisk"
+      ]
+    },
+    "size": {
+      "type": "string",
+      "title": "Thumbnail size",
+      "description": "small 16x4, medium 24x6, large 40x10 terminal cells",
+      "default": "medium",
+      "options": [
+        "small",
+        "medium",
+        "large"
+      ]
+    }
+  }
+}
