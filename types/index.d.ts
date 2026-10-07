@@ -2,6 +2,7 @@ export type Mode = 'blocks' | 'pixels' | 'overlay'
 
 export type Preview = {
   n: number
+  source?: string
   width?: number
   height?: number
   thumb?: string
@@ -11,6 +12,7 @@ export type Preview = {
   id?: number
   note?: string
   isPending?: boolean
+  isInIde?: boolean
 }
 
 declare module 'claude-code' {

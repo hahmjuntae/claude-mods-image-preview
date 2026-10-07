@@ -27,6 +27,17 @@
         "overlay"
       ]
     },
+    "open": {
+      "type": "string",
+      "title": "Open the original",
+      "description": "ide: open each pasted image in the connected IDE's editor (JetBrains, VS Code) without taking the focus. viewer: the IDE when connected, the system image viewer otherwise. off: never on paste. Pressing a thumbnail's number opens it either way.",
+      "default": "ide",
+      "options": [
+        "ide",
+        "viewer",
+        "off"
+      ]
+    },
     "size": {
       "type": "string",
       "title": "Thumbnail size",

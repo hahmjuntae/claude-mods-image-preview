@@ -40,6 +40,7 @@ Claude Code 터미널 세션의 프롬프트에 입력합니다.
 | 원본 | Claude Code 가 붙여넣는 즉시 세션 임시 폴더에 저장하는 `images/N.*` 파일을 읽습니다 |
 | 렌더링 | 터미널이 지원하는 가장 좋은 렌더러로 썸네일을 그립니다 |
 | 맞춤 | 프롬프트 위에 남은 줄과 칸에 맞춰 썸네일을 줄입니다. 테두리 때문에 이미지가 설정 크기보다 작아지면 테두리를 빼고 번호를 이미지 옆에 둡니다 |
+| 원본 | 연결된 IDE 편집기에 원본을 포커스 이동 없이 엽니다 (원본 화질 절 참고) |
 | 정리 | 토큰을 지우거나 프롬프트를 보내면 썸네일이 사라집니다 |
 
 ## 렌더러
@@ -71,6 +72,16 @@ tmux 안에서도 추가 설정 없이 썸네일이 표시됩니다. 색을 정�
 
 Windows Terminal, PowerShell, Git Bash 에서 사분면 블록으로 표시합니다. PNG 는 내장 디코더로 읽고, 그 외 형식은 PowerShell(`System.Drawing`)이 있으면 변환해 표시합니다.
 
+## 원본 화질
+
+kitty 그래픽 프로토콜이 없는 터미널은 썸네일을 문자 칸으로 그립니다. 그래서 JetBrains 터미널, Windows Terminal, VS Code 등에서는 스크린샷 속 글자를 썸네일로 읽을 수 없습니다. 그래서 원본 파일도 함께 엽니다.
+
+- Claude Code 확장이 설치된 IDE 터미널(JetBrains, VS Code)에서는 붙여넣은 이미지를 한 번씩 편집기 탭에 엽니다. IDE 의 이미지 뷰어라 원본 화질 그대로입니다. 포커스를 가져가지 않으므로 프롬프트 입력을 이어갈 수 있고, 프롬프트 위 썸네일은 한 줄 표시 `#1 in IDE` 로 줄어듭니다. Claude Code 가 모드에 IDE 연결을 내주지 않으면 Windows 에서는 PowerShell 로 같은 IDE 서버에 직접 연결합니다.
+- 썸네일 번호(`#1`)를 누르면 다시 엽니다. IDE 밖에서는 시스템 이미지 뷰어로 엽니다.
+- `open` 을 `viewer` 로 두면 IDE 가 연결되지 않았을 때 붙여넣는 즉시 시스템 이미지 뷰어로 엽니다.
+
+화면에 보이는 방식만 바뀝니다. Claude 는 항상 원본 파일을 받습니다.
+
 ## 설정
 
 `/config` 에서 바꿀 수 있습니다.
@@ -79,6 +90,7 @@ Windows Terminal, PowerShell, Git Bash 에서 사분면 블록으로 표시합�
 |---|---|---|
 | `renderer` | `auto`, `blocks`, `pixels`, `overlay` | `auto` |
 | `size` | `small` 16x4, `medium` 24x6, `large` 40x10 (터미널 칸 기준) | `medium` |
+| `open` | `ide`, `viewer`, `off` | `ide` |
 
 `auto` 는 터미널이 오버레이를 알리면 오버레이, kitty 와 Ghostty 에서는 픽셀, 그 외에서는 사분면 블록을 고릅니다.
 

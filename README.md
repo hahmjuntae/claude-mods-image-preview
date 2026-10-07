@@ -40,6 +40,7 @@ Requires a Claude Code build with function-hook mods. Tested on Claude Code 2.1.
 | Source | Reads `images/N.*`, which Claude Code writes to the session temp folder the moment you paste |
 | Draw | Renders a thumbnail with the best renderer your terminal supports (see below) |
 | Fit | Shrinks thumbnails to the rows and columns free above the prompt. When the frame would make the image smaller than its size setting, the frame is dropped and the number moves beside the image |
+| Open | Opens the original in the connected IDE's editor without taking the focus (see Original quality) |
 | Clear | Thumbnails disappear when you delete the token or submit the prompt |
 
 ## Renderers
@@ -71,6 +72,16 @@ The overlay renderer needs both inside tmux. Without `CLAUDE_CODE_TMUX_TRUECOLOR
 
 Works in Windows Terminal, PowerShell and Git Bash with quadrant blocks. PNG is decoded by the built-in decoder, and other formats are converted with PowerShell (`System.Drawing`) when it is available.
 
+## Original quality
+
+A terminal draws a thumbnail out of text cells unless it speaks the kitty graphics protocol, so in the JetBrains terminal, Windows Terminal, VS Code and the rest a screenshot's text cannot be read in the thumbnail. The mod therefore also opens the original file:
+
+- Inside an IDE terminal with the Claude Code extension (JetBrains, VS Code), each pasted image opens once in an editor tab, the IDE's own image viewer at full quality. The tab opens without taking the focus, so you keep typing in the prompt, and the thumbnail above the prompt shrinks to a one-line `#1 in IDE`. When Claude Code does not lend the IDE connection to mods, the mod reaches the same IDE server itself through PowerShell on Windows.
+- Pressing a thumbnail's number (`#1`) opens it again, in the IDE or, outside an IDE, in the system image viewer.
+- `open` set to `viewer` also opens the system image viewer on paste when no IDE is connected.
+
+This only changes what you see. Claude always receives the original file.
+
 ## Settings
 
 Change them in `/config`.
@@ -79,6 +90,7 @@ Change them in `/config`.
 |---|---|---|
 | `renderer` | `auto`, `blocks`, `pixels`, `overlay` | `auto` |
 | `size` | `small` 16x4, `medium` 24x6, `large` 40x10 (terminal cells) | `medium` |
+| `open` | `ide`, `viewer`, `off` | `ide` |
 
 `auto` picks the overlay when the terminal advertises it, pixels on kitty and Ghostty, and quadrant blocks everywhere else.
 
