@@ -6,7 +6,7 @@ Claude Code 입력창에 이미지를 붙여넣으면 프롬프트 위에 썸네
 
 ![Claude Code 프롬프트 위에 표시된 붙여넣은 이미지 썸네일 2장](docs/screenshot.png)
 
-이미지를 지원하지 않는 터미널에서는 같은 배치를 RGB 반블록 문자로 그립니다.
+이미지를 지원하지 않는 터미널에서는 같은 배치를 RGB 사분면 블록 문자로 그립니다.
 
 ```
 ╭────────────╮ ╭────────────────────────╮
@@ -48,11 +48,13 @@ Claude Code 터미널 세션의 프롬프트에 입력합니다.
 |---|---|
 | kitty, Ghostty (tmux, screen, SSH 밖) | kitty graphics protocol 실제 픽셀 |
 | 오버레이를 알리는 터미널 (터미널 연동 절 참고, tmux 안 포함) | 터미널이 마커 셀 위에 실제 픽셀을 겹쳐 그림 |
-| 그 외 전부: iTerm2, Terminal.app, WezTerm, Alacritty, Windows Terminal, VS Code, tmux, screen, SSH | 위아래 반블록 문자 `▀` `▄` 와 RGB 색상 |
+| 그 외 전부: iTerm2, Terminal.app, WezTerm, Alacritty, Windows Terminal, VS Code, tmux, screen, SSH | 셀당 가로 2, 세로 2 픽셀을 그리는 사분면 블록 문자 `▀` `▌` `▚` `▗` 등과 RGB 색상 |
 
-kitty 계열로 판단했지만 터미널이 그래픽 질의에 응답하지 않으면 반블록으로 자동 전환합니다.
+kitty 계열로 판단했지만 터미널이 그래픽 질의에 응답하지 않으면 사분면 블록으로 자동 전환합니다.
 
-Claude Code 는 tmux 안에서 kitty graphics 를 내보내지 않고, tmux 이미지 전달에 쓰이는 kitty 유니코드 플레이스홀더 문자 `U+10EEEE` 도 거부합니다. 그래서 tmux 안에서는 바깥 터미널이 오버레이를 지원할 때만 실제 픽셀로 표시하고, 그 외에는 반블록으로 표시합니다.
+셀마다 2x2 픽셀에 가장 잘 맞는 두 색과 사분면 글리프를 고릅니다. 그래서 반블록 `▀` 보다 가로 해상도가 2배이고, 위아래로만 나뉘는 셀은 그대로 `▀` 로 그립니다.
+
+Claude Code 는 tmux 안에서 kitty graphics 를 내보내지 않고, tmux 이미지 전달에 쓰이는 kitty 유니코드 플레이스홀더 문자 `U+10EEEE` 도 거부합니다. 그래서 tmux 안에서는 바깥 터미널이 오버레이를 지원할 때만 실제 픽셀로 표시하고, 그 외에는 사분면 블록으로 표시합니다.
 
 ## tmux
 
@@ -63,11 +65,11 @@ tmux 안에서도 추가 설정 없이 썸네일이 표시됩니다. 색을 정�
 | `export CLAUDE_CODE_TMUX_TRUECOLOR=1` | 셸 프로필 (`~/.zshrc`, `~/.bashrc`) | Claude Code 는 이 값이 없으면 tmux 안에서 색을 256색으로 낮춥니다. Claude Code 2.1.292 에서 이 값이 없으면 썸네일이 256색 코드로, 있으면 24비트 RGB 로 그려졌습니다 |
 | `set -sa terminal-features ',*:RGB'` | `~/.tmux.conf` (tmux 3.2 이상) | tmux 가 24비트 색을 바깥 터미널로 전달합니다. 이전 버전은 `set -ga terminal-overrides ',*:Tc'` 를 씁니다 |
 
-오버레이 렌더러는 tmux 안에서 두 설정이 모두 필요합니다. `CLAUDE_CODE_TMUX_TRUECOLOR=1` 이 없으면 모드가 반블록으로 자동 전환합니다.
+오버레이 렌더러는 tmux 안에서 두 설정이 모두 필요합니다. `CLAUDE_CODE_TMUX_TRUECOLOR=1` 이 없으면 모드가 사분면 블록으로 자동 전환합니다.
 
 ## Windows
 
-Windows Terminal, PowerShell, Git Bash 에서 반블록으로 표시합니다. PNG 는 내장 디코더로 읽고, 그 외 형식은 PowerShell(`System.Drawing`)이 있으면 변환해 표시합니다.
+Windows Terminal, PowerShell, Git Bash 에서 사분면 블록으로 표시합니다. PNG 는 내장 디코더로 읽고, 그 외 형식은 PowerShell(`System.Drawing`)이 있으면 변환해 표시합니다.
 
 ## 설정
 
@@ -78,7 +80,7 @@ Windows Terminal, PowerShell, Git Bash 에서 반블록으로 표시합니다. P
 | `renderer` | `auto`, `blocks`, `pixels`, `overlay` | `auto` |
 | `size` | `small` 16x4, `medium` 24x6, `large` 40x10 (터미널 칸 기준) | `medium` |
 
-`auto` 는 터미널이 오버레이를 알리면 오버레이, kitty 와 Ghostty 에서는 픽셀, 그 외에서는 반블록을 고릅니다.
+`auto` 는 터미널이 오버레이를 알리면 오버레이, kitty 와 Ghostty 에서는 픽셀, 그 외에서는 사분면 블록을 고릅니다.
 
 ## 지원 형식
 

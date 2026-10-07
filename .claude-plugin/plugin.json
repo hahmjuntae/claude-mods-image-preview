@@ -1,6 +1,6 @@
 {
   "name": "mods-image-preview",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Shows thumbnails of pasted images above the prompt, in any terminal",
   "author": {
     "name": "hahmjuntae"
@@ -18,7 +18,7 @@
     "renderer": {
       "type": "string",
       "title": "Renderer",
-      "description": "auto: kitty graphics in kitty and Ghostty, an overlay where the terminal advertises one, colored half-blocks elsewhere. blocks, pixels and overlay force one renderer.",
+      "description": "auto: kitty graphics in kitty and Ghostty, an overlay where the terminal advertises one, colored quadrant blocks elsewhere. blocks, pixels and overlay force one renderer.",
       "default": "auto",
       "options": [
         "auto",

@@ -5,7 +5,7 @@ import type { Mode, Preview } from '../types'
 import { fromBase64, toBase64 } from './base64'
 import { planBand } from './layout'
 import { decodePng, isPng } from './png'
-import { downsample, fitBox, halfBlockCells, markCells, markHex, markId, type Fit } from './thumb'
+import { downsample, fitBox, markCells, markHex, markId, quadrantCells, type Fit } from './thumb'
 
 const previews = atom({ plugin: 'mods-image-preview', key: 'previews' } as const, [] as Preview[])
 const mode = atom({ plugin: 'mods-image-preview', key: 'mode' } as const, 'blocks' as Mode)
@@ -19,6 +19,8 @@ const WEB_IMAGE = /\.(png|jpe?g|gif|webp)$/i
 const CLAUDE_TEMP = /^claude(-\d+)?$/
 const ALT_DENY = /\balt\b/i
 const SIZES: Record<string, [number, number]> = { small: [16, 4], medium: [24, 6], large: [40, 10] }
+// 렌더 시점 축소 여유분으로 사분면 격자의 2배 해상도 원본 보관
+const SOURCE_SCALE = 2
 
 type Picture = { bytes: Uint8Array; path: string }
 
@@ -111,7 +113,7 @@ function blockCells(preview: Preview, fit: Fit): string {
 
   const thumb = { width: preview.thumbWidth, height: preview.thumbHeight, data: fromBase64(preview.thumb) }
 
-  return halfBlockCells(downsample(thumb, fit.pxWidth, fit.pxHeight))
+  return quadrantCells(downsample(thumb, fit.pxWidth * 2, fit.pxHeight))
 }
 
 async function poll($: EngineInterface, box: [number, number]): Promise<void> {
@@ -166,7 +168,7 @@ async function loadPreview($: EngineInterface, n: number, box: [number, number],
     const picture = await readPicture($, file, maxColumns * 4)
     const image = decodePng(picture.bytes)
     const fit = fitBox(image.width, image.height, maxColumns, maxRows)
-    const thumb = downsample(image, fit.pxWidth, fit.pxHeight)
+    const thumb = downsample(image, fit.pxWidth * 2 * SOURCE_SCALE, fit.pxHeight * SOURCE_SCALE)
     const preview: Preview = {
       n,
       width: image.width,
@@ -191,7 +193,7 @@ async function loadPreview($: EngineInterface, n: number, box: [number, number],
   }
 }
 
-// 엔진이 kitty 그래픽 질의에 응답이 없으면 alt 를 그리므로 반블록 폴백 근거
+// 엔진이 kitty 그래픽 질의에 응답이 없으면 alt 를 그리므로 블록 폴백 근거
 async function probePixels($: EngineInterface, list: Preview[]): Promise<void> {
   const target = list.find(preview => preview.file && !probed.has(preview.n))
 

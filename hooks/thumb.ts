@@ -4,10 +4,14 @@ import type { Rgba } from './png'
 export type Fit = { columns: number; rows: number; pxWidth: number; pxHeight: number }
 
 const DEFAULT_COLOR = 0x01000000
-const UPPER_HALF = 0x2580
-const LOWER_HALF = 0x2584
-const SPACE = 0x20
 const OPAQUE = 128
+// 사분면 마스크별 전경 글리프, 비트는 왼위 1 오른위 2 왼아래 4 오른아래 8
+const QUADRANT = [
+  0x20, 0x2598, 0x259d, 0x2580, 0x2596, 0x258c, 0x259e, 0x259b,
+  0x2597, 0x259a, 0x2590, 0x259c, 0x2584, 0x2599, 0x259f, 0x2588,
+]
+// 동률이면 앞선 분할을 고르므로 반블록 ▀ 우선
+const SPLITS = [0b0011, 0b0101, 0b1001, 0b0001, 0b0010, 0b0100, 0b1000]
 
 export function fitBox(width: number, height: number, maxColumns: number, maxRows: number): Fit {
   const scale = Math.min(maxColumns / width, (maxRows * 2) / height)
@@ -61,37 +65,94 @@ export function downsample(image: Rgba, width: number, height: number): Rgba {
   return { width, height, data: out }
 }
 
-export function halfBlockCells(image: Rgba): string {
+// 셀마다 2x2 픽셀을 오차 제곱합이 가장 작은 두 색 분할로 근사해 반블록보다 가로 해상도 2배
+export function quadrantCells(image: Rgba): string {
   const { width, height, data } = image
+  const columns = Math.ceil(width / 2)
   const rows = Math.ceil(height / 2)
-  const words = new Uint32Array(width * rows * 3)
-  const color = (x: number, y: number) => {
-    if (y >= height) return undefined
+  const words = new Uint32Array(columns * rows * 3)
+  const quad: (number | undefined)[] = [0, 0, 0, 0]
+
+  const pixel = (x: number, y: number) => {
+    if (x >= width || y >= height) return undefined
 
     const i = (y * width + x) * 4
 
-    return data[i + 3] < OPAQUE ? undefined : (data[i] << 16) | (data[i + 1] << 8) | data[i + 2]
+    return data[i + 3] < OPAQUE ? undefined : i
+  }
+
+  const mean = (mask: number) => {
+    let r = 0
+    let g = 0
+    let b = 0
+    let count = 0
+
+    for (let bit = 0; bit < 4; bit++) {
+      const i = quad[bit]
+
+      if (!(mask & (1 << bit)) || i === undefined) continue
+
+      r += data[i]
+      g += data[i + 1]
+      b += data[i + 2]
+      count++
+    }
+
+    return [r / count, g / count, b / count]
+  }
+
+  const pack = ([r, g, b]: number[]) => (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b)
+
+  const error = (mask: number, fg: number[], bg: number[]) => {
+    let sum = 0
+
+    for (let bit = 0; bit < 4; bit++) {
+      const i = quad[bit] as number
+      const c = mask & (1 << bit) ? fg : bg
+      sum += (data[i] - c[0]) ** 2 + (data[i + 1] - c[1]) ** 2 + (data[i + 2] - c[2]) ** 2
+    }
+
+    return sum
   }
 
   for (let cy = 0; cy < rows; cy++) {
-    for (let cx = 0; cx < width; cx++) {
-      const top = color(cx, cy * 2)
-      const bottom = color(cx, cy * 2 + 1)
-      const w = (cy * width + cx) * 3
+    for (let cx = 0; cx < columns; cx++) {
+      quad[0] = pixel(cx * 2, cy * 2)
+      quad[1] = pixel(cx * 2 + 1, cy * 2)
+      quad[2] = pixel(cx * 2, cy * 2 + 1)
+      quad[3] = pixel(cx * 2 + 1, cy * 2 + 1)
 
-      if (top !== undefined) {
-        words[w] = UPPER_HALF
-        words[w + 1] = top
-        words[w + 2] = bottom ?? DEFAULT_COLOR
-      } else if (bottom !== undefined) {
-        words[w] = LOWER_HALF
-        words[w + 1] = bottom
-        words[w + 2] = DEFAULT_COLOR
-      } else {
-        words[w] = SPACE
+      const opaque = quad.reduce<number>((mask, i, bit) => (i === undefined ? mask : mask | (1 << bit)), 0)
+      const w = (cy * columns + cx) * 3
+
+      if (opaque === 0) {
+        words[w] = QUADRANT[0]
         words[w + 1] = DEFAULT_COLOR
         words[w + 2] = DEFAULT_COLOR
+        continue
       }
+
+      // 투명 픽셀은 터미널 배경에 맡기므로 불투명 픽셀만 전경 한 색
+      if (opaque !== 0b1111) {
+        words[w] = QUADRANT[opaque]
+        words[w + 1] = pack(mean(opaque))
+        words[w + 2] = DEFAULT_COLOR
+        continue
+      }
+
+      let best = { mask: 0, fg: [0, 0, 0], bg: [0, 0, 0], error: Infinity }
+
+      for (const mask of SPLITS) {
+        const fg = mean(mask)
+        const bg = mean(~mask & 0b1111)
+        const sum = error(mask, fg, bg)
+
+        if (sum < best.error) best = { mask, fg, bg, error: sum }
+      }
+
+      words[w] = QUADRANT[best.mask]
+      words[w + 1] = pack(best.fg)
+      words[w + 2] = pack(best.bg)
     }
   }
 

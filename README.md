@@ -6,7 +6,7 @@ A Claude Code mod that shows thumbnails of pasted images right above the prompt,
 
 ![Thumbnails of two pasted images above the Claude Code prompt](docs/screenshot.png)
 
-Terminals without image support get the same layout in colored half-blocks:
+Terminals without image support get the same layout in colored quadrant blocks:
 
 ```
 ╭────────────╮ ╭────────────────────────╮
@@ -48,11 +48,13 @@ Requires a Claude Code build with function-hook mods. Tested on Claude Code 2.1.
 |---|---|
 | kitty, Ghostty (outside tmux, screen and SSH) | Real pixels through the kitty graphics protocol |
 | A terminal that advertises the overlay (see Terminal integration), tmux included | Real pixels drawn by the terminal over marker cells |
-| Everything else: iTerm2, Terminal.app, WezTerm, Alacritty, Windows Terminal, VS Code, tmux, screen, SSH | Colored half-block characters (`▀` `▄`) |
+| Everything else: iTerm2, Terminal.app, WezTerm, Alacritty, Windows Terminal, VS Code, tmux, screen, SSH | Colored quadrant block characters (`▀` `▌` `▚` `▗` ...), two pixels across and two down per cell |
 
-If a terminal looks like kitty but does not answer the graphics query, the mod switches to half-blocks on its own.
+If a terminal looks like kitty but does not answer the graphics query, the mod switches to quadrant blocks on its own.
 
-Inside tmux, Claude Code does not send kitty graphics, and it rejects the kitty Unicode placeholder character (`U+10EEEE`) that tmux image passthrough relies on. So inside tmux the thumbnail is drawn with half-blocks unless the outer terminal supports the overlay.
+Each cell picks the two colors and the quadrant glyph that best fit its 2x2 pixels, so a cell holds twice the horizontal detail of a half-block (`▀`) while a split between the pixel rows still draws as `▀`.
+
+Inside tmux, Claude Code does not send kitty graphics, and it rejects the kitty Unicode placeholder character (`U+10EEEE`) that tmux image passthrough relies on. So inside tmux the thumbnail is drawn with quadrant blocks unless the outer terminal supports the overlay.
 
 ## tmux
 
@@ -63,11 +65,11 @@ Thumbnails work inside tmux with no extra setup. Two settings decide whether the
 | `export CLAUDE_CODE_TMUX_TRUECOLOR=1` | Shell profile (`~/.zshrc`, `~/.bashrc`) | Claude Code lowers its colors to 256 inside tmux unless this is set. On Claude Code 2.1.292 a thumbnail drew with 256-color codes without it and 24-bit RGB with it |
 | `set -sa terminal-features ',*:RGB'` | `~/.tmux.conf` (tmux 3.2+) | Lets tmux pass 24-bit color to the outer terminal. On older tmux use `set -ga terminal-overrides ',*:Tc'` |
 
-The overlay renderer needs both inside tmux. Without `CLAUDE_CODE_TMUX_TRUECOLOR=1` the mod falls back to half-blocks on its own.
+The overlay renderer needs both inside tmux. Without `CLAUDE_CODE_TMUX_TRUECOLOR=1` the mod falls back to quadrant blocks on its own.
 
 ## Windows
 
-Works in Windows Terminal, PowerShell and Git Bash with half-blocks. PNG is decoded by the built-in decoder, and other formats are converted with PowerShell (`System.Drawing`) when it is available.
+Works in Windows Terminal, PowerShell and Git Bash with quadrant blocks. PNG is decoded by the built-in decoder, and other formats are converted with PowerShell (`System.Drawing`) when it is available.
 
 ## Settings
 
@@ -78,7 +80,7 @@ Change them in `/config`.
 | `renderer` | `auto`, `blocks`, `pixels`, `overlay` | `auto` |
 | `size` | `small` 16x4, `medium` 24x6, `large` 40x10 (terminal cells) | `medium` |
 
-`auto` picks the overlay when the terminal advertises it, pixels on kitty and Ghostty, and half-blocks everywhere else.
+`auto` picks the overlay when the terminal advertises it, pixels on kitty and Ghostty, and quadrant blocks everywhere else.
 
 ## Supported formats
 
