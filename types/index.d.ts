@@ -1,4 +1,4 @@
-export type Mode = 'blocks' | 'pixels' | 'marks'
+export type Mode = 'blocks' | 'pixels' | 'overlay'
 
 export type Preview = {
   n: number
@@ -12,6 +12,6 @@ export type Preview = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'image-preview': { previews: Preview[]; mode: Mode }
+    'mods-image-preview': { previews: Preview[]; mode: Mode }
   }
 }

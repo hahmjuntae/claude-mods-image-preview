@@ -1,12 +1,12 @@
 {
-  "name": "image-preview",
+  "name": "mods-image-preview",
   "description": "Pasted image thumbnails above the Claude Code prompt",
   "owner": {
     "name": "hahmjuntae"
   },
   "plugins": [
     {
-      "name": "image-preview",
+      "name": "mods-image-preview",
       "source": "./",
       "description": "Shows thumbnails of pasted images above the prompt, in any terminal"
     }

@@ -6,8 +6,8 @@ import { fromBase64 } from './base64'
 import { decodePng, isPng, pngSize } from './png'
 import { downsample, fitBox, halfBlockCells, markCells, markHex, markId } from './thumb'
 
-const previews = atom({ plugin: 'image-preview', key: 'previews' } as const, [] as Preview[])
-const mode = atom({ plugin: 'image-preview', key: 'mode' } as const, 'blocks' as Mode)
+const previews = atom({ plugin: 'mods-image-preview', key: 'previews' } as const, [] as Preview[])
+const mode = atom({ plugin: 'mods-image-preview', key: 'mode' } as const, 'blocks' as Mode)
 
 const POLL_MS = 300
 const PENDING_TICKS = 10
@@ -35,7 +35,7 @@ export const register: Register = (on, options) => {
     const chosen = await chooseMode($, renderer)
     await update($, mode, () => chosen)
     await update($, previews, () => [])
-    if (chosen === 'marks') await pruneLinks($)
+    if (chosen === 'overlay') await pruneLinks($)
     // 이미지 붙여넣기는 prompt.edit 를 거치지 않아 초안 폴링으로 우회
     $.clock.every(POLL_MS, () => {
       void poll($, box)
@@ -131,13 +131,13 @@ async function loadPreview($: EngineInterface, n: number, box: [number, number],
     const tries = (attempts.get(n) ?? 0) + 1
     attempts.set(n, tries)
 
-    return tries < PENDING_TICKS ? { n, columns: 0, rows: 0, isPending: true } : { n, columns: 0, rows: 0, note: '미리보기 없음' }
+    return tries < PENDING_TICKS ? { n, columns: 0, rows: 0, isPending: true } : { n, columns: 0, rows: 0, note: 'not found' }
   }
 
   try {
     const picture = await readPicture($, file, maxColumns * 4)
 
-    if (chosen === 'marks') {
+    if (chosen === 'overlay') {
       const source = WEB_IMAGE.test(file) ? file : picture.path
       const id = markId(source)
 
@@ -155,7 +155,7 @@ async function loadPreview($: EngineInterface, n: number, box: [number, number],
 
     return { n, columns: fit.columns, rows: fit.rows, cells, file: chosen === 'pixels' ? picture.path : undefined }
   } catch {
-    return { n, columns: 0, rows: 0, note: '미리보기 불가' }
+    return { n, columns: 0, rows: 0, note: 'unsupported' }
   }
 }
 
@@ -202,7 +202,7 @@ async function pruneLinks($: EngineInterface): Promise<void> {
 async function overlayDir($: EngineInterface): Promise<string | undefined> {
   const home = await $.env.get('HOME')
 
-  return home ? `${home}/.claude/image-preview` : undefined
+  return home ? `${home}/.claude/claude-mods-image-preview` : undefined
 }
 
 async function readPicture($: EngineInterface, file: string, edge: number): Promise<Picture> {
@@ -215,7 +215,7 @@ async function readPicture($: EngineInterface, file: string, edge: number): Prom
   }
 
   // PNG 가 아니거나 읽기 상한 초과 시 macOS sips 축소본 폴백
-  const out = `${file.replace(/[\\/]images[\\/][^\\/]+$/, '')}/image-preview/${file.replace(/^.*[\\/]/, '')}.png`
+  const out = `${file.replace(/[\\/]images[\\/][^\\/]+$/, '')}/claude-mods-image-preview/${file.replace(/^.*[\\/]/, '')}.png`
   await $.fs.write(out, '')
   const { exitCode } = await $.process.run(['sips', '-s', 'format', 'png', '-Z', String(edge), file, '--out', out])
 
@@ -280,10 +280,24 @@ async function childDirs($: EngineInterface, path: string): Promise<string[]> {
 }
 
 async function chooseMode($: EngineInterface, renderer: string): Promise<Mode> {
-  if (renderer === 'blocks' || renderer === 'pixels') return renderer
-  if (renderer === 'asterisk' || (await $.env.get('ASTERISK_APP_TERMINAL')) === '1') return 'marks'
+  if (renderer === 'blocks' || renderer === 'pixels' || renderer === 'overlay') return renderer
+  if (await advertisesOverlay($)) return 'overlay'
 
   return (await drawsPixels($)) ? 'pixels' : 'blocks'
+}
+
+// 이미 떠 있는 tmux 창은 새 환경 변수를 못 받아 tmux 전역 환경을 함께 확인하는 기준
+async function advertisesOverlay($: EngineInterface): Promise<boolean> {
+  if ((await $.env.get('CLAUDE_MODS_IMAGE_OVERLAY')) === '1') return true
+  if (!(await $.env.get('TMUX'))) return false
+
+  try {
+    const { exitCode, stdout } = await $.process.run(['tmux', 'show-environment', '-g', 'CLAUDE_MODS_IMAGE_OVERLAY'])
+
+    return exitCode === 0 && stdout.trim() === 'CLAUDE_MODS_IMAGE_OVERLAY=1'
+  } catch {
+    return false
+  }
 }
 
 async function drawsPixels($: EngineInterface): Promise<boolean> {

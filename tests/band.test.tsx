@@ -32,16 +32,16 @@ test('draws one tile per pasted image token and clears with the draft', async ($
   await $.session.start(START)
   await clock.advance(300 * 12)
 
-  const band = await $.ui.mount({ plugin: 'image-preview', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+  const band = await $.ui.mount({ plugin: 'mods-image-preview', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
 
   expect(await band.find({ type: 'Text', text: '#1' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: '#2' })).toBeDefined()
-  expect(await band.findAll({ type: 'Text', text: '미리보기 없음' })).toHaveLength(2)
+  expect(await band.findAll({ type: 'Text', text: 'not found' })).toHaveLength(2)
 
   draft.text = ''
   await clock.advance(300)
 
-  const cleared = await $.ui.mount({ plugin: 'image-preview', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+  const cleared = await $.ui.mount({ plugin: 'mods-image-preview', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
 
   expect(await cleared.find({ type: 'Text', text: 'engine band' })).toBeDefined()
   expect(await cleared.find({ type: 'Text', text: '#1' })).toBeUndefined()
@@ -56,7 +56,7 @@ test('leaves the band to the engine on surfaces that show images themselves', as
   await $.session.start(START)
   await clock.advance(300 * 12)
 
-  const band = await $.ui.mount({ plugin: 'image-preview', surface: 'desktop', component: 'AbovePrompt', props: BAND_PROPS })
+  const band = await $.ui.mount({ plugin: 'mods-image-preview', surface: 'desktop', component: 'AbovePrompt', props: BAND_PROPS })
 
   expect(await band.find({ type: 'Text', text: 'engine band' })).toBeDefined()
 })
