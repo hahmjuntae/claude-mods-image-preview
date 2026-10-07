@@ -6,7 +6,7 @@ import { fromBase64, toBase64 } from './base64'
 import { planBand } from './layout'
 import { ideCommand, viewerCommands } from './open'
 import { decodePng, isPng } from './png'
-import { downsample, fitBox, markCells, markHex, markId, quadrantCells, type Fit } from './thumb'
+import { downsample, fitBox, markCells, markHex, markId, quadrantCells, windowCells, windowKey, type Fit } from './thumb'
 
 const previews = atom({ plugin: 'mods-image-preview', key: 'previews' } as const, [] as Preview[])
 const mode = atom({ plugin: 'mods-image-preview', key: 'mode' } as const, 'blocks' as Mode)
@@ -25,6 +25,8 @@ const SOURCE_SCALE = 2
 const IDE_TIMEOUT_MS = 10_000
 const VIEWER_TIMEOUT_MS = 5_000
 const PORT = /^\d{1,5}$/
+// 오버레이 보조 프로세스가 spec 갱신이 15초 끊기면 스스로 끝나므로 그보다 짧은 생존 신호 간격
+const HEARTBEAT_MS = 5_000
 
 type Picture = { bytes: Uint8Array; path: string }
 
@@ -34,6 +36,7 @@ let isPolling = false
 const attempts = new Map<number, number>()
 const probed = new Set<number>()
 const opened = new Set<string>()
+const overlay = { isRunning: false, writtenAt: 0 }
 
 export const register: Register = (on, options) => {
   const box: [number, number] = SIZES[String(options.size)] ?? [24, 6]
@@ -55,6 +58,8 @@ export const register: Register = (on, options) => {
 
   on('prompt.submit', async ($, e, next) => {
     await update($, previews, () => [])
+
+    if ((await read($, mode)) === 'window') await syncOverlay($, [])
 
     return next(e)
   })
@@ -91,6 +96,13 @@ export const register: Register = (on, options) => {
             alt={`Image #${preview.n}`}
           />
         )
+      }
+
+      // 보조 프로세스가 화면에서 이 단색 칸을 찾아 원본 이미지 창으로 덮는 마커
+      if (current === 'window' && preview.source) {
+        const key = overlayKey(preview.n)
+
+        return <Raster key={`raster-${preview.n}`} columns={fit.columns} rows={fit.rows} cells={windowCells(key, fit.columns, fit.rows)} />
       }
 
       const cells =
@@ -161,6 +173,9 @@ async function poll($: EngineInterface, box: [number, number], openMode: string)
 
     if (isSettled) {
       if (chosen === 'pixels') await probePixels($, current)
+      if (chosen === 'window' && current.length > 0 && (await $.clock.now()) - overlay.writtenAt >= HEARTBEAT_MS) {
+        await syncOverlay($, current)
+      }
 
       return
     }
@@ -175,6 +190,8 @@ async function poll($: EngineInterface, box: [number, number], openMode: string)
     }
 
     await update($, previews, () => nextPreviews)
+
+    if (chosen === 'window') await syncOverlay($, nextPreviews)
 
     for (const { source } of nextPreviews) {
       if (!source || opened.has(source)) continue
@@ -451,7 +468,70 @@ async function claudeDir($: EngineInterface): Promise<string | undefined> {
   return home ? `${home}/.claude` : undefined
 }
 
+// 세션마다 마커 색이 달라 한 화면에 뜬 여러 세션의 썸네일을 구분하는 기준
+function overlayKey(n: number): number {
+  return windowKey(n, located ? markId(located.sessionId) : 0)
+}
+
+async function syncOverlay($: EngineInterface, list: Preview[]): Promise<void> {
+  if (!located) return
+
+  const spec = `${located.dir.replace(/[\\/]images$/, '')}/claude-mods-image-preview/overlay.txt`
+  const lines = list
+    .filter(preview => preview.source && !preview.isInIde && preview.width)
+    .map(preview => `${overlayKey(preview.n).toString(16).padStart(6, '0')}\t${preview.source}`)
+
+  await $.fs.write(spec, lines.length > 0 ? `${lines.join('\n')}\n` : '')
+  overlay.writtenAt = await $.clock.now()
+
+  if (lines.length > 0 && !overlay.isRunning) await startOverlay($, spec)
+}
+
+// 모듈이 내려가면 엔진이 자식을 끝내고, 비정상 종료면 이 세션은 블록 렌더러로 되돌리는 기준
+async function startOverlay($: EngineInterface, spec: string): Promise<void> {
+  const root = $.plugin.root
+  const candidates = [`${root}/hooks/overlay.ps1`, `${root}/../hooks/overlay.ps1`]
+  let script: string | undefined
+
+  for (const path of candidates) {
+    if (await $.fs.exists(path)) {
+      script = path
+      break
+    }
+  }
+
+  if (!script) {
+    await update($, mode, () => 'blocks')
+    return
+  }
+
+  overlay.isRunning = true
+
+  const argv = ['powershell', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-Spec', spec]
+
+  void (async () => {
+    let code: number | null = -1
+
+    try {
+      const child = $.process.spawn({ argv })
+
+      for await (const piece of child) {
+        if (piece.stream === 'stderr') $.ui.log(piece.text, { to: 'debug' })
+      }
+
+      code = (await child.result).code
+    } catch {
+      code = -1
+    }
+
+    overlay.isRunning = false
+
+    if (code !== 0) await update($, mode, () => 'blocks')
+  })()
+}
+
 async function chooseMode($: EngineInterface, renderer: string): Promise<Mode> {
+  if (renderer === 'window') return (await $.env.get('OS')) === 'Windows_NT' ? 'window' : 'blocks'
   if (renderer === 'blocks' || renderer === 'pixels' || renderer === 'overlay') return renderer
   if (await advertisesOverlay($)) return 'overlay'
 

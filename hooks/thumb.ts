@@ -159,6 +159,23 @@ export function quadrantCells(image: Rgba): string {
   return toBase64(new Uint8Array(words.buffer))
 }
 
+// 화면 캡처로 찾을 단색 마커, 터미널이 채널당 4비트로 줄여 그려도 그대로 남는 0x11 배수 색만 사용
+export function windowKey(n: number, salt: number): number {
+  return 0x220000 | ((0x11 * (salt & 3)) << 8) | (0x11 * (4 + (n % 12)))
+}
+
+export function windowCells(key: number, columns: number, rows: number): string {
+  const words = new Uint32Array(columns * rows * 3)
+
+  for (let i = 0; i < columns * rows; i++) {
+    words[i * 3] = 0x20
+    words[i * 3 + 1] = DEFAULT_COLOR
+    words[i * 3 + 2] = key
+  }
+
+  return toBase64(new Uint8Array(words.buffer))
+}
+
 const MARK_FIRST = 0x2800
 const MARK_MAGIC = 0xa
 const MARK_STEP = 17

@@ -50,6 +50,7 @@ Requires a Claude Code build with function-hook mods. Tested on Claude Code 2.1.
 | kitty, Ghostty (outside tmux, screen and SSH) | Real pixels through the kitty graphics protocol |
 | A terminal that advertises the overlay (see Terminal integration), tmux included | Real pixels drawn by the terminal over marker cells |
 | Everything else: iTerm2, Terminal.app, WezTerm, Alacritty, Windows Terminal, VS Code, tmux, screen, SSH | Colored quadrant block characters (`▀` `▌` `▚` `▗` ...), two pixels across and two down per cell |
+| Any terminal or IDE on Windows, with `renderer` set to `window` | The original at full quality, drawn by a helper window over the thumbnail (see Original quality) |
 
 If a terminal looks like kitty but does not answer the graphics query, the mod switches to quadrant blocks on its own.
 
@@ -74,9 +75,10 @@ Works in Windows Terminal, PowerShell and Git Bash with quadrant blocks. PNG is 
 
 ## Original quality
 
-A terminal draws a thumbnail out of text cells unless it speaks the kitty graphics protocol, so in the JetBrains terminal, Windows Terminal, VS Code and the rest a screenshot's text cannot be read in the thumbnail. The mod therefore also opens the original file:
+A terminal draws a thumbnail out of text cells unless it speaks the kitty graphics protocol, so in the JetBrains terminal, Windows Terminal, VS Code and the rest a screenshot's text cannot be read in the thumbnail. The mod therefore offers two ways to see the original:
 
-- Inside an IDE terminal with the Claude Code extension (JetBrains, VS Code), each pasted image opens once in an editor tab, the IDE's own image viewer at full quality. The tab opens without taking the focus, so you keep typing in the prompt, and the thumbnail above the prompt shrinks to a one-line `#1 in IDE`. When Claude Code does not lend the IDE connection to mods, the mod reaches the same IDE server itself through PowerShell on Windows.
+- `renderer` set to `window` (Windows): the thumbnail is painted in one marker color, and a helper (`hooks/overlay.ps1`, PowerShell with C#) finds that rectangle on screen about ten times a second and draws the original over it in a borderless window. The window takes neither the focus nor clicks, follows the band as it moves, and disappears with the token, the submitted prompt, or the terminal leaving the screen. It is excluded from screen capture, so it does not show in your own screenshots. The helper only reads the screen to find the marker, keeps nothing, and exits within 15 seconds after the session ends; if it cannot start, the session falls back to blocks.
+- With `open` set to `ide`, inside an IDE terminal with the Claude Code extension (JetBrains, VS Code), each pasted image opens once in an editor tab, the IDE's own image viewer at full quality. The tab opens without taking the focus, so you keep typing in the prompt, and the thumbnail above the prompt shrinks to a one-line `#1 in IDE`. When Claude Code does not lend the IDE connection to mods, the mod reaches the same IDE server itself through PowerShell on Windows.
 - Pressing a thumbnail's number (`#1`) opens it again, in the IDE or, outside an IDE, in the system image viewer.
 - `open` set to `viewer` also opens the system image viewer on paste when no IDE is connected.
 
@@ -88,9 +90,9 @@ Change them in `/config`.
 
 | Name | Values | Default |
 |---|---|---|
-| `renderer` | `auto`, `blocks`, `pixels`, `overlay` | `auto` |
+| `renderer` | `auto`, `blocks`, `pixels`, `overlay`, `window` | `auto` |
 | `size` | `small` 16x4, `medium` 24x6, `large` 40x10 (terminal cells) | `medium` |
-| `open` | `ide`, `viewer`, `off` | `ide` |
+| `open` | `off`, `ide`, `viewer` | `off` |
 
 `auto` picks the overlay when the terminal advertises it, pixels on kitty and Ghostty, and quadrant blocks everywhere else.
 

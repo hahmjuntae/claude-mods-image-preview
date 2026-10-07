@@ -18,20 +18,21 @@
     "renderer": {
       "type": "string",
       "title": "Renderer",
-      "description": "auto: kitty graphics in kitty and Ghostty, an overlay where the terminal advertises one, colored quadrant blocks elsewhere. blocks, pixels and overlay force one renderer.",
+      "description": "auto: kitty graphics in kitty and Ghostty, an overlay where the terminal advertises one, colored quadrant blocks elsewhere. window (Windows): a helper finds the thumbnail on screen and draws the original over it in any terminal or IDE. blocks, pixels, overlay and window force one renderer.",
       "default": "auto",
       "options": [
         "auto",
         "blocks",
         "pixels",
-        "overlay"
+        "overlay",
+        "window"
       ]
     },
     "open": {
       "type": "string",
       "title": "Open the original",
-      "description": "ide: open each pasted image in the connected IDE's editor (JetBrains, VS Code) without taking the focus. viewer: the IDE when connected, the system image viewer otherwise. off: never on paste. Pressing a thumbnail's number opens it either way.",
-      "default": "ide",
+      "description": "off: open the original only when a thumbnail's number is pressed. ide: also open each pasted image in the connected IDE's editor (JetBrains, VS Code) without taking the focus. viewer: the IDE when connected, the system image viewer otherwise.",
+      "default": "off",
       "options": [
         "ide",
         "viewer",

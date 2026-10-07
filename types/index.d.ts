@@ -1,4 +1,4 @@
-export type Mode = 'blocks' | 'pixels' | 'overlay'
+export type Mode = 'blocks' | 'pixels' | 'overlay' | 'window'
 
 export type Preview = {
   n: number

@@ -70,7 +70,7 @@ test('opens the system viewer with the platform command', () => {
   expect(viewerCommands('/tmp/1.png', false)).toEqual([['xdg-open', '/tmp/1.png'], ['open', '/tmp/1.png']])
 })
 
-test('opens each pasted image once in the connected IDE without taking the focus', async ($, on) => {
+test('opens each pasted image once in the connected IDE without taking the focus', { options: { open: 'ide' } }, async ($, on) => {
   const clock = mock.clock(on)
   const draft = { text: '[Image #1] 이거 봐줘' }
   mock.env(on, { TERM: 'xterm-256color', TEMP: '/t' })
@@ -89,7 +89,7 @@ test('opens each pasted image once in the connected IDE without taking the focus
   expect(await band.find({ type: 'Raster' })).toBeUndefined()
 })
 
-test('reaches the IDE terminal server through PowerShell when the engine has no IDE tool', async ($, on) => {
+test('reaches the IDE terminal server through PowerShell when the engine has no IDE tool', { options: { open: 'ide' } }, async ($, on) => {
   const clock = mock.clock(on)
   const draft = { text: '[Image #1]' }
   mock.env(on, { ...WINDOWS, CLAUDE_CODE_SSE_PORT: '63124' })
@@ -124,7 +124,7 @@ test('opens the original in the system viewer when its number is pressed', async
   expect(runs.filter(argv => argv[0] === 'explorer')).toEqual([['explorer', PASTED.replace(/\//g, '\\')]])
 })
 
-test('leaves pasted images closed when opening is off', { options: { open: 'off' } }, async ($, on) => {
+test('leaves pasted images closed by default', async ($, on) => {
   const clock = mock.clock(on)
   const draft = { text: '[Image #1]' }
   mock.env(on, { TERM: 'xterm-256color', TEMP: '/t' })
