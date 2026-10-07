@@ -39,6 +39,7 @@ Claude Code 터미널 세션의 프롬프트에 입력합니다.
 | 감지 | 입력창 초안을 300ms 간격으로 읽어 `[Image #N]` 토큰을 찾습니다 |
 | 원본 | Claude Code 가 붙여넣는 즉시 세션 임시 폴더에 저장하는 `images/N.*` 파일을 읽습니다 |
 | 렌더링 | 터미널이 지원하는 가장 좋은 렌더러로 썸네일을 그립니다 |
+| 맞춤 | 프롬프트 위에 남은 줄과 칸에 맞춰 썸네일을 줄입니다. 남은 줄이 5줄보다 적으면 테두리를 빼고 번호를 이미지 옆에 둡니다 |
 | 정리 | 토큰을 지우거나 프롬프트를 보내면 썸네일이 사라집니다 |
 
 ## 렌더러
@@ -52,6 +53,21 @@ Claude Code 터미널 세션의 프롬프트에 입력합니다.
 kitty 계열로 판단했지만 터미널이 그래픽 질의에 응답하지 않으면 반블록으로 자동 전환합니다.
 
 Claude Code 는 tmux 안에서 kitty graphics 를 내보내지 않고, tmux 이미지 전달에 쓰이는 kitty 유니코드 플레이스홀더 문자 `U+10EEEE` 도 거부합니다. 그래서 tmux 안에서는 바깥 터미널이 오버레이를 지원할 때만 실제 픽셀로 표시하고, 그 외에는 반블록으로 표시합니다.
+
+## tmux
+
+tmux 안에서도 추가 설정 없이 썸네일이 표시됩니다. 색을 정확하게 표시하려면 아래 두 설정이 필요합니다.
+
+| 설정 | 위치 | 이유 |
+|---|---|---|
+| `export CLAUDE_CODE_TMUX_TRUECOLOR=1` | 셸 프로필 (`~/.zshrc`, `~/.bashrc`) | Claude Code 는 이 값이 없으면 tmux 안에서 색을 256색으로 낮춥니다. Claude Code 2.1.292 에서 이 값이 없으면 썸네일이 256색 코드로, 있으면 24비트 RGB 로 그려졌습니다 |
+| `set -sa terminal-features ',*:RGB'` | `~/.tmux.conf` (tmux 3.2 이상) | tmux 가 24비트 색을 바깥 터미널로 전달합니다. 이전 버전은 `set -ga terminal-overrides ',*:Tc'` 를 씁니다 |
+
+오버레이 렌더러는 tmux 안에서 두 설정이 모두 필요합니다. `CLAUDE_CODE_TMUX_TRUECOLOR=1` 이 없으면 모드가 반블록으로 자동 전환합니다.
+
+## Windows
+
+Windows Terminal, PowerShell, Git Bash 에서 반블록으로 표시합니다. PNG 는 내장 디코더로 읽고, 그 외 형식은 PowerShell(`System.Drawing`)이 있으면 변환해 표시합니다.
 
 ## 설정
 
@@ -69,10 +85,10 @@ Claude Code 는 tmux 안에서 kitty graphics 를 내보내지 않고, tmux 이�
 | 형식 | 처리 |
 |---|---|
 | PNG | 내장 디코더. 1/2/4/8/16비트, 팔레트, 투명도, 인터레이스 지원 |
-| JPEG, GIF, WebP, HEIC 등 | macOS `sips` 로 축소 PNG 변환 후 표시 |
-| 4MiB 초과 PNG | macOS `sips` 로 축소 후 표시 |
+| JPEG, GIF, WebP, HEIC 등 | 먼저 찾은 변환기로 축소 PNG 변환 후 표시: macOS `sips`, ImageMagick(`magick`, `convert`), Windows PowerShell |
+| 4MiB 초과 PNG | 같은 변환기로 축소 후 표시 |
 
-macOS 가 아닌 환경에서 PNG 외 형식은 `unsupported` 로 표시합니다.
+변환기가 하나도 없으면 PNG 외 형식은 `unsupported` 로 표시합니다.
 
 ## 터미널 연동
 

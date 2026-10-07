@@ -2,9 +2,10 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Mode, Preview } from '../types'
-import { fromBase64 } from './base64'
-import { decodePng, isPng, pngSize } from './png'
-import { downsample, fitBox, halfBlockCells, markCells, markHex, markId } from './thumb'
+import { fromBase64, toBase64 } from './base64'
+import { planBand } from './layout'
+import { decodePng, isPng } from './png'
+import { downsample, fitBox, halfBlockCells, markCells, markHex, markId, type Fit } from './thumb'
 
 const previews = atom({ plugin: 'mods-image-preview', key: 'previews' } as const, [] as Preview[])
 const mode = atom({ plugin: 'mods-image-preview', key: 'mode' } as const, 'blocks' as Mode)
@@ -59,31 +60,58 @@ export const register: Register = (on, options) => {
 
     const current = await read($, mode)
     const { Box, Image, Raster, Text } = $.ui.resolve(e)
+    const plan = planBand(list, e.props.maxRows, e.props.bodyColumns, box)
     bandRequestId = e.requestId
 
+    const picture = (preview: Preview, fit: Fit | undefined) => {
+      if (!fit) return <Text dimColor>{preview.note ?? '...'}</Text>
+
+      if (current === 'pixels' && preview.file) {
+        return (
+          <Image
+            key={`image-${preview.n}`}
+            source={{ file: preview.file, format: 'png' }}
+            columns={fit.columns}
+            rows={fit.rows}
+            alt={`Image #${preview.n}`}
+          />
+        )
+      }
+
+      const cells =
+        current === 'overlay' && preview.id !== undefined
+          ? markCells(preview.id, fit.columns, fit.rows)
+          : blockCells(preview, fit)
+
+      return <Raster key={`raster-${preview.n}`} columns={fit.columns} rows={fit.rows} cells={cells} />
+    }
+
     return (
-      <Box flexDirection="row" flexWrap="wrap" alignItems="flex-end" columnGap={1}>
-        {list.map(preview => (
-          <Box key={`tile-${preview.n}`} flexDirection="column" alignItems="center" borderStyle="round" borderDimColor>
-            {preview.columns === 0 ? (
-              <Text dimColor>{preview.note ?? '...'}</Text>
-            ) : current === 'pixels' && preview.file ? (
-              <Image
-                key={`image-${preview.n}`}
-                source={{ file: preview.file, format: 'png' }}
-                columns={preview.columns}
-                rows={preview.rows}
-                alt={`Image #${preview.n}`}
-              />
-            ) : (
-              <Raster key={`raster-${preview.n}`} columns={preview.columns} rows={preview.rows} cells={preview.cells ?? ''} />
-            )}
-            <Text dimColor>#{preview.n}</Text>
-          </Box>
-        ))}
+      <Box flexDirection="row" alignItems="flex-end" columnGap={1}>
+        {list.map((preview, i) =>
+          plan.isCompact ? (
+            <Box key={`tile-${preview.n}`} flexDirection="row" columnGap={1}>
+              {picture(preview, plan.tiles[i]?.fit)}
+              <Text dimColor>#{preview.n}</Text>
+            </Box>
+          ) : (
+            <Box key={`tile-${preview.n}`} flexDirection="column" alignItems="center" borderStyle="round" borderDimColor>
+              {picture(preview, plan.tiles[i]?.fit)}
+              <Text dimColor>#{preview.n}</Text>
+            </Box>
+          ),
+        )}
       </Box>
     )
   })
+}
+
+function blockCells(preview: Preview, fit: Fit): string {
+  if (!preview.thumb || !preview.thumbWidth || !preview.thumbHeight) return ''
+
+  const thumb = { width: preview.thumbWidth, height: preview.thumbHeight, data: fromBase64(preview.thumb) }
+
+  return halfBlockCells(downsample(thumb, fit.pxWidth, fit.pxHeight))
 }
 
 async function poll($: EngineInterface, box: [number, number]): Promise<void> {
@@ -131,31 +159,35 @@ async function loadPreview($: EngineInterface, n: number, box: [number, number],
     const tries = (attempts.get(n) ?? 0) + 1
     attempts.set(n, tries)
 
-    return tries < PENDING_TICKS ? { n, columns: 0, rows: 0, isPending: true } : { n, columns: 0, rows: 0, note: 'not found' }
+    return tries < PENDING_TICKS ? { n, isPending: true } : { n, note: 'not found' }
   }
 
   try {
     const picture = await readPicture($, file, maxColumns * 4)
+    const image = decodePng(picture.bytes)
+    const fit = fitBox(image.width, image.height, maxColumns, maxRows)
+    const thumb = downsample(image, fit.pxWidth, fit.pxHeight)
+    const preview: Preview = {
+      n,
+      width: image.width,
+      height: image.height,
+      thumb: toBase64(thumb.data),
+      thumbWidth: thumb.width,
+      thumbHeight: thumb.height,
+    }
+
+    if (chosen === 'pixels') return { ...preview, file: picture.path }
 
     if (chosen === 'overlay') {
       const source = WEB_IMAGE.test(file) ? file : picture.path
       const id = markId(source)
 
-      if (await linkForOverlay($, source, id)) {
-        const { width, height } = pngSize(picture.bytes)
-        const fit = fitBox(width, height, maxColumns, maxRows)
-
-        return { n, columns: fit.columns, rows: fit.rows, cells: markCells(id, fit.columns, fit.rows) }
-      }
+      if (await linkForOverlay($, source, id)) return { ...preview, id }
     }
 
-    const image = decodePng(picture.bytes)
-    const fit = fitBox(image.width, image.height, maxColumns, maxRows)
-    const cells = halfBlockCells(downsample(image, fit.pxWidth, fit.pxHeight))
-
-    return { n, columns: fit.columns, rows: fit.rows, cells, file: chosen === 'pixels' ? picture.path : undefined }
+    return preview
   } catch {
-    return { n, columns: 0, rows: 0, note: 'unsupported' }
+    return { n, note: 'unsupported' }
   }
 }
 
@@ -214,14 +246,44 @@ async function readPicture($: EngineInterface, file: string, edge: number): Prom
     if (isPng(bytes)) return { bytes, path: file }
   }
 
-  // PNG 가 아니거나 읽기 상한 초과 시 macOS sips 축소본 폴백
+  // PNG 가 아니거나 읽기 상한 초과 시 OS 별 변환기로 만든 축소 PNG 폴백
   const out = `${file.replace(/[\\/]images[\\/][^\\/]+$/, '')}/claude-mods-image-preview/${file.replace(/^.*[\\/]/, '')}.png`
   await $.fs.write(out, '')
-  const { exitCode } = await $.process.run(['sips', '-s', 'format', 'png', '-Z', String(edge), file, '--out', out])
 
-  if (exitCode !== 0) throw new Error('sips failed')
+  for (const argv of converters(file, out, edge)) {
+    try {
+      const { exitCode } = await $.process.run(argv)
 
-  return { bytes: fromBase64((await $.fs.read(out, { as: 'bytes' })).base64), path: out }
+      if (exitCode !== 0) continue
+
+      const bytes = fromBase64((await $.fs.read(out, { as: 'bytes' })).base64)
+
+      if (isPng(bytes)) return { bytes, path: out }
+    } catch {
+      continue
+    }
+  }
+
+  throw new Error('no converter')
+}
+
+function converters(file: string, out: string, edge: number): string[][] {
+  const quote = (value: string) => `'${value.replace(/'/g, "''")}'`
+  const resize = `${edge}x${edge}>`
+  const script =
+    '& { param($in, $out, $edge) Add-Type -AssemblyName System.Drawing; ' +
+    '$s = [System.Drawing.Image]::FromFile($in); ' +
+    '$k = [Math]::Min(1, $edge / [Math]::Max($s.Width, $s.Height)); ' +
+    '$b = New-Object System.Drawing.Bitmap ([int][Math]::Max(1, $s.Width * $k)), ([int][Math]::Max(1, $s.Height * $k)); ' +
+    '$g = [System.Drawing.Graphics]::FromImage($b); $g.DrawImage($s, 0, 0, $b.Width, $b.Height); ' +
+    '$b.Save($out, [System.Drawing.Imaging.ImageFormat]::Png) }'
+
+  return [
+    ['sips', '-s', 'format', 'png', '-Z', String(edge), file, '--out', out],
+    ['magick', file, '-resize', resize, out],
+    ['convert', file, '-resize', resize, out],
+    ['powershell', '-NoProfile', '-NonInteractive', '-Command', `${script} ${quote(file)} ${quote(out)} ${edge}`],
+  ]
 }
 
 async function findImage($: EngineInterface, n: number): Promise<string | undefined> {
@@ -288,8 +350,12 @@ async function chooseMode($: EngineInterface, renderer: string): Promise<Mode> {
 
 // 이미 떠 있는 tmux 창은 새 환경 변수를 못 받아 tmux 전역 환경을 함께 확인하는 기준
 async function advertisesOverlay($: EngineInterface): Promise<boolean> {
+  const isTmux = Boolean(await $.env.get('TMUX'))
+
+  // tmux 안에서 truecolor 가 꺼지면 마커 색이 256색으로 깨지는 문제 방지
+  if (isTmux && !(await $.env.get('CLAUDE_CODE_TMUX_TRUECOLOR'))) return false
   if ((await $.env.get('CLAUDE_MODS_IMAGE_OVERLAY')) === '1') return true
-  if (!(await $.env.get('TMUX'))) return false
+  if (!isTmux) return false
 
   try {
     const { exitCode, stdout } = await $.process.run(['tmux', 'show-environment', '-g', 'CLAUDE_MODS_IMAGE_OVERLAY'])

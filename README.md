@@ -39,6 +39,7 @@ Requires a Claude Code build with function-hook mods. Tested on Claude Code 2.1.
 | Detect | Reads the prompt draft every 300 ms and looks for `[Image #N]` tokens |
 | Source | Reads `images/N.*`, which Claude Code writes to the session temp folder the moment you paste |
 | Draw | Renders a thumbnail with the best renderer your terminal supports (see below) |
+| Fit | Shrinks thumbnails to the rows and columns free above the prompt. With fewer than five free rows the frame is dropped and the number moves beside the image |
 | Clear | Thumbnails disappear when you delete the token or submit the prompt |
 
 ## Renderers
@@ -52,6 +53,21 @@ Requires a Claude Code build with function-hook mods. Tested on Claude Code 2.1.
 If a terminal looks like kitty but does not answer the graphics query, the mod switches to half-blocks on its own.
 
 Inside tmux, Claude Code does not send kitty graphics, and it rejects the kitty Unicode placeholder character (`U+10EEEE`) that tmux image passthrough relies on. So inside tmux the thumbnail is drawn with half-blocks unless the outer terminal supports the overlay.
+
+## tmux
+
+Thumbnails work inside tmux with no extra setup. Two settings decide whether their colors are exact:
+
+| Setting | Where | Why |
+|---|---|---|
+| `export CLAUDE_CODE_TMUX_TRUECOLOR=1` | Shell profile (`~/.zshrc`, `~/.bashrc`) | Claude Code lowers its colors to 256 inside tmux unless this is set. On Claude Code 2.1.292 a thumbnail drew with 256-color codes without it and 24-bit RGB with it |
+| `set -sa terminal-features ',*:RGB'` | `~/.tmux.conf` (tmux 3.2+) | Lets tmux pass 24-bit color to the outer terminal. On older tmux use `set -ga terminal-overrides ',*:Tc'` |
+
+The overlay renderer needs both inside tmux. Without `CLAUDE_CODE_TMUX_TRUECOLOR=1` the mod falls back to half-blocks on its own.
+
+## Windows
+
+Works in Windows Terminal, PowerShell and Git Bash with half-blocks. PNG is decoded by the built-in decoder, and other formats are converted with PowerShell (`System.Drawing`) when it is available.
 
 ## Settings
 
@@ -69,10 +85,10 @@ Change them in `/config`.
 | Format | Handling |
 |---|---|
 | PNG | Built-in decoder: 1/2/4/8/16-bit, palette, transparency, interlaced |
-| JPEG, GIF, WebP, HEIC and others | Converted to a small PNG with macOS `sips` |
-| PNG over 4 MiB | Downscaled with macOS `sips` |
+| JPEG, GIF, WebP, HEIC and others | Converted to a small PNG with the first converter found: macOS `sips`, ImageMagick (`magick`, `convert`), Windows PowerShell |
+| PNG over 4 MiB | Downscaled with the same converters |
 
-Outside macOS, formats other than PNG show `unsupported`.
+Without any of these converters, formats other than PNG show `unsupported`.
 
 ## Terminal integration
 
