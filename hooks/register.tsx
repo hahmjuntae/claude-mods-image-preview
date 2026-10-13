@@ -9,7 +9,8 @@ import { decodePng, isPng } from './png'
 import { downsample, fitBox, markCells, markHex, markId, quadrantCells, windowCells, windowKey, type Fit } from './thumb'
 
 const previews = atom({ plugin: 'mods-image-preview', key: 'previews' } as const, [] as Preview[])
-const mode = atom({ plugin: 'mods-image-preview', key: 'mode' } as const, 'blocks' as Mode)
+// atom 은 /clear 에서 초기값 blocks 로 돌아가 오버레이 선택이 사라지므로 모듈 변수 기준
+let chosenMode: Mode | undefined
 
 const POLL_MS = 300
 const PENDING_TICKS = 10
@@ -44,13 +45,12 @@ export const register: Register = (on, options) => {
   const openMode = String(options.open)
 
   on('session.start', async ($, e, next) => {
-    const chosen = await chooseMode($, renderer)
-    await update($, mode, () => chosen)
+    chosenMode = await chooseMode($, renderer)
     await update($, previews, () => [])
-    if (chosen === 'overlay') await pruneLinks($)
+    if (chosenMode === 'overlay') await pruneLinks($)
     // 이미지 붙여넣기는 prompt.edit 를 거치지 않아 초안 폴링으로 우회
     $.clock.every(POLL_MS, () => {
-      void poll($, box, openMode)
+      void poll($, box, openMode, renderer)
     })
 
     return next(e)
@@ -59,7 +59,7 @@ export const register: Register = (on, options) => {
   on('prompt.submit', async ($, e, next) => {
     await update($, previews, () => [])
 
-    if ((await read($, mode)) === 'window') await syncOverlay($, [])
+    if ((await currentMode($, renderer)) === 'window') await syncOverlay($, [])
 
     return next(e)
   })
@@ -71,7 +71,7 @@ export const register: Register = (on, options) => {
 
     if (list.length === 0) return next(e)
 
-    const current = await read($, mode)
+    const current = await currentMode($, renderer)
     const { Box, Button, Image, Raster, Text } = $.ui.resolve(e)
     // IDE 탭이 원본을 보여 주는 이미지는 흐린 썸네일 대신 한 줄 표시라 폭 배분에서 제외
     const plan = planBand(
@@ -155,7 +155,7 @@ function blockCells(preview: Preview, fit: Fit): string {
   return quadrantCells(downsample(thumb, fit.pxWidth * 2, fit.pxHeight))
 }
 
-async function poll($: EngineInterface, box: [number, number], openMode: string): Promise<void> {
+async function poll($: EngineInterface, box: [number, number], openMode: string, renderer: string): Promise<void> {
   if (isPolling) return
 
   isPolling = true
@@ -164,7 +164,7 @@ async function poll($: EngineInterface, box: [number, number], openMode: string)
     const { text } = await $.prompt.read()
     const wanted = [...new Set([...text.matchAll(TOKEN)].map(match => Number(match[1])))]
     const current = await read($, previews)
-    const chosen = await read($, mode)
+    const chosen = await currentMode($, renderer)
     const shown = current.map(preview => preview.n)
     const isSettled =
       current.every(preview => !preview.isPending) &&
@@ -268,7 +268,7 @@ async function probePixels($: EngineInterface, list: Preview[]): Promise<void> {
     probed.add(target.n)
   } else if (ALT_DENY.test(deny)) {
     probed.add(target.n)
-    await update($, mode, () => 'blocks')
+    chosenMode = 'blocks'
   }
 }
 
@@ -501,7 +501,7 @@ async function startOverlay($: EngineInterface, spec: string): Promise<void> {
   }
 
   if (!script) {
-    await update($, mode, () => 'blocks')
+    chosenMode = 'blocks'
     return
   }
 
@@ -526,8 +526,14 @@ async function startOverlay($: EngineInterface, spec: string): Promise<void> {
 
     overlay.isRunning = false
 
-    if (code !== 0) await update($, mode, () => 'blocks')
+    if (code !== 0) chosenMode = 'blocks'
   })()
+}
+
+async function currentMode($: EngineInterface, renderer: string): Promise<Mode> {
+  chosenMode ??= await chooseMode($, renderer)
+
+  return chosenMode
 }
 
 async function chooseMode($: EngineInterface, renderer: string): Promise<Mode> {

@@ -1,6 +1,6 @@
 {
   "name": "mods-image-preview",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Shows thumbnails of pasted images above the prompt, in any terminal",
   "author": {
     "name": "hahmjuntae"
